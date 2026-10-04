@@ -33,7 +33,7 @@ public class ShowService implements ShowServiceInterface {
 
     @Transactional(readOnly = true)
     public ShowResponse getShow(Long id) {
-        Show show = showRepository.findById(id)
+        Show show = showRepository.findByIdWithSeats(id)
                 .orElseThrow(() -> new ShowNotFoundException(id));
         return toResponse(show);
     }
