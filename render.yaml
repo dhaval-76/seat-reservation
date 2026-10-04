@@ -3,12 +3,23 @@ services:
     name: seatreservation
     runtime: docker
     plan: free
-    healthCheckPath: /actuator/health
+    autoDeploy: false
+    healthCheckPath: /actuator/health/readiness
     envVars:
-      - key: DATABASE_URL
+      - key: SPRING_PROFILES_ACTIVE
+        value: render
+      - key: DB_HOST
         fromDatabase:
           name: booking-db
-          property: connectionString
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: booking-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: booking-db
+          property: name
       - key: DATABASE_USERNAME
         fromDatabase:
           name: booking-db
