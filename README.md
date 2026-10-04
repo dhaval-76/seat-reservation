@@ -51,19 +51,16 @@ Protected endpoints require a `Bearer` token in the format `Bearer user-<id>`. T
 Authorization: Bearer user-alice
 ```
 
+**Why only some endpoints require auth:** Show creation (`POST /shows`) and viewing (`GET /shows/{id}`) are public — anyone can browse available shows. Reserving and cancelling seats require authentication because these actions are tied to a specific user (enforcing per-user limits, ownership checks, etc.).
+
 ### Endpoints
 
 #### Create Show
 
-```
-POST /shows
-```
-
-```json
-{
-  "name": "Hamilton",
-  "seats": ["A1", "A2", "A3", "B1", "B2"]
-}
+```bash
+curl -s -X POST http://localhost:8080/shows \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Hamilton", "seats": ["A1", "A2", "A3", "B1", "B2"]}'
 ```
 
 Response `201`:
@@ -82,24 +79,19 @@ Response `201`:
 
 #### Get Show
 
-```
-GET /shows/{id}
+```bash
+curl -s http://localhost:8080/shows/1
 ```
 
-Response `200`: same shape as above with current seat statuses.
+Response `200`: same shape as Create Show with current seat statuses.
 
 #### Reserve Seats
 
-```
-POST /shows/{showId}/reserve
-Authorization: Bearer user-alice
-```
-
-```json
-{
-  "seats": ["A1", "A2"],
-  "idempotencyKey": "uuid-123"
-}
+```bash
+curl -s -X POST http://localhost:8080/shows/1/reserve \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer user-alice" \
+  -d '{"seats": ["A1", "A2"], "idempotencyKey": "uuid-123"}'
 ```
 
 Response `201`:
@@ -125,12 +117,24 @@ Response `201`:
 
 #### Cancel Reservation
 
-```
-POST /reservations/{id}/cancel
-Authorization: Bearer user-alice
+```bash
+curl -s -X POST http://localhost:8080/reservations/1/cancel \
+  -H "Authorization: Bearer user-alice"
 ```
 
-Response `200`: reservation with status `CANCELLED`.
+Response `200`:
+
+```json
+{
+  "id": 1,
+  "showId": 1,
+  "userId": "user-alice",
+  "status": "CANCELLED",
+  "seats": ["A1", "A2"],
+  "createdAt": "2026-10-04T07:00:00Z",
+  "expiresAt": "2026-10-04T07:05:00Z"
+}
+```
 
 ## Configuration
 
