@@ -7,9 +7,12 @@ import com.booking.entity.SeatStatus;
 import com.booking.entity.Show;
 import com.booking.exception.ShowNotFoundException;
 import com.booking.repository.ShowRepository;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -17,6 +20,11 @@ import java.util.Map;
 public class ShowService implements ShowServiceInterface {
 
     private final ShowRepository showRepository;
+
+    private final Cache<Long, ShowResponse> showCache = Caffeine.newBuilder()
+            .maximumSize(100)
+            .expireAfterWrite(Duration.ofSeconds(2))
+            .build();
 
     public ShowService(ShowRepository showRepository) {
         this.showRepository = showRepository;
@@ -30,14 +38,26 @@ public class ShowService implements ShowServiceInterface {
             show.addSeat(new Seat(label));
         }
         show = showRepository.save(show);
-        return toResponse(show);
+        ShowResponse response = toResponse(show);
+        showCache.put(show.getId(), response);
+        return response;
     }
 
     @Transactional(readOnly = true)
     public ShowResponse getShow(Long id) {
+        ShowResponse cached = showCache.getIfPresent(id);
+        if (cached != null) {
+            return cached;
+        }
         Show show = showRepository.findByIdWithSeats(id)
                 .orElseThrow(() -> new ShowNotFoundException(id));
-        return toResponse(show);
+        ShowResponse response = toResponse(show);
+        showCache.put(id, response);
+        return response;
+    }
+
+    public void evictShow(Long id) {
+        showCache.invalidate(id);
     }
 
     private ShowResponse toResponse(Show show) {

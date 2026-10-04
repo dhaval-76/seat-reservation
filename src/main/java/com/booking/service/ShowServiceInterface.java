@@ -6,4 +6,5 @@ import com.booking.dto.ShowResponse;
 public interface ShowServiceInterface {
     ShowResponse createShow(CreateShowRequest request);
     ShowResponse getShow(Long id);
+    void evictShow(Long id);
 }
