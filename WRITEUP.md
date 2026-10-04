@@ -61,6 +61,19 @@ This is the correct trade-off for a seat reservation system. Double-selling is w
 4. Readiness probe failing (DB connectivity lost)
 5. 5xx rate > 0 (should never happen — all business declines are 4xx)
 
+## Caching
+
+The `GET /shows/{id}` endpoint is the hottest read path — every client polls it to see available seats. Under high concurrency (thousands of users refreshing during an on-sale event), this becomes a thundering herd against the database.
+
+**Two-layer caching:**
+
+1. **Application layer (Caffeine, 2s TTL):** An in-process cache absorbs repeated reads. A 2-second window is short enough that seat availability stays near-real-time, but long enough to collapse thousands of identical queries into one DB hit per window.
+2. **HTTP layer (Cache-Control: max-age=1, must-revalidate):** Tells CDNs and browsers to cache the response for 1 second. This sheds load before it even reaches the application server.
+
+**After-commit cache eviction:** The critical design decision is *when* to invalidate the cache after a write (reserve, cancel, expiry). Evicting inside the `@Transactional` method is a bug — the transaction hasn't committed yet, so a concurrent read will re-populate the cache with pre-commit (stale) data. Instead, eviction is triggered by `@TransactionalEventListener(phase = AFTER_COMMIT)` in a dedicated `ShowCacheEvictionListener`. This guarantees the cache is only invalidated after the new seat state is durable in the database, so any subsequent cache miss reads the committed state.
+
+**Why not a distributed cache (Redis):** For a single-instance deployment, an in-process cache has zero network overhead and sub-microsecond lookups. Redis adds a network hop and operational complexity. If scaling to multiple instances, the 2s TTL already bounds staleness — each instance independently converges within 2 seconds. A distributed cache only becomes worthwhile if that staleness window is unacceptable.
+
 ## AI Usage
 
 AI tools (Claude) were used as an implementation accelerator. The split was deliberate: I owned all design and architectural decisions; AI handled mechanical output.
@@ -85,14 +98,15 @@ AI tools (Claude) were used as an implementation accelerator. The split was deli
 - Wrote the exception handler mappings (`GlobalExceptionHandler`) — I specified which exceptions map to which HTTP status codes
 - Created the bash test scripts (`burst-test.sh`, `full-test.sh`) — I defined the test cases and assertions; AI generated the curl/bash implementation
 - Generated the Spring Security filter chain configuration from my auth design (Bearer token → userId extraction)
-- Wrote the event classes and async listener — boilerplate Spring event plumbing
+- Wrote the event classes, async logging listener, and after-commit cache eviction listener — boilerplate Spring event plumbing
+- Implemented the Caffeine cache integration and Cache-Control header setup from my caching design
 - Produced the ShedLock configuration and scheduler class from my requirements
 - Handled the Jackson `@JsonNaming` annotations and Spring Boot 4.x package migration (`tools.jackson.*`)
 
 ## What I'd Do Next
 
 1. **Confirm/pay endpoint** — Add `POST /reservations/{id}/confirm` with a payment integration. Currently reservations are immediately confirmed; a real system would hold → confirm on payment.
-2. **Optimistic concurrency for reads** — The `GET /shows/{id}` endpoint does a full seat scan. Add a version column and ETag headers for cache-friendly polling.
+2. **ETag-based conditional requests** — Add a version column and ETag headers to `GET /shows/{id}` so clients can send `If-None-Match` and receive 304 when nothing changed, saving bandwidth on top of the existing Caffeine + Cache-Control caching.
 3. **Rate limiting** — Per-IP and per-user rate limits to protect against abusive burst traffic.
 4. **Connection pool tuning** — Profile under 20K concurrent load and tune HikariCP pool size, PostgreSQL `max_connections`, and consider PgBouncer for connection pooling at scale.
 5. **Horizontal scaling** — The advisory lock approach is tied to a single PostgreSQL instance. For multi-region, consider Redis-based distributed locks or a queue-based reservation system.

@@ -10,6 +10,7 @@ Concurrent seat reservation API with PostgreSQL row-level locking, advisory lock
 | Spring Boot | 4.1.1 |
 | PostgreSQL | 16 |
 | Flyway | managed by Spring Boot |
+| Caffeine Cache | managed by Spring Boot |
 | ShedLock | 5.16.0 |
 | Micrometer / Prometheus | managed by Spring Boot |
 
@@ -190,16 +191,27 @@ Idempotency keys are enforced by a `UNIQUE` constraint. A duplicate key with the
 
 A scheduled task polls for confirmed reservations past their `expires_at` timestamp and releases their seats. In multi-instance deployments, ShedLock ensures only one instance runs the task at a time using a database-backed lock (`shedlock` table).
 
+### Caching
+
+Two-layer read cache for `GET /shows/{id}`:
+
+1. **Caffeine (2s TTL, 100 entries):** In-process cache absorbs refresh storms during high-demand on-sale events.
+2. **Cache-Control (max-age=1, must-revalidate):** HTTP header for CDN/browser caching, shedding load before it reaches the app.
+
+Cache eviction uses `@TransactionalEventListener(phase = AFTER_COMMIT)` — the cache is invalidated only after the write transaction commits, preventing a concurrent read from re-caching stale pre-commit data.
+
 ### Events
 
-Side-effects (logging) are decoupled from the transaction via Spring application events:
+Side-effects are decoupled from the transaction via Spring application events:
 
 - `ReservationCreatedEvent`
 - `ReservationCancelledEvent`
 - `ReservationExpiredEvent`
 - `ReservationDeclinedEvent`
 
-Events are processed asynchronously by `ReservationEventListener`.
+Two listeners process these events:
+- `ReservationEventListener` — asynchronous logging
+- `ShowCacheEvictionListener` — after-commit cache invalidation
 
 ### Metrics
 
