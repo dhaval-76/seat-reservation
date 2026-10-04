@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: seat-reservation
+    name: seatreservation
     runtime: docker
     plan: free
     healthCheckPath: /actuator/health
