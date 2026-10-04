@@ -38,7 +38,6 @@ public class ReservationService implements ReservationServiceInterface {
     private final BookingMetrics metrics;
     private final BookingProperties properties;
     private final ApplicationEventPublisher eventPublisher;
-    private final ShowServiceInterface showService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -50,8 +49,7 @@ public class ReservationService implements ReservationServiceInterface {
             ReservationStrategy strategy,
             BookingMetrics metrics,
             BookingProperties properties,
-            ApplicationEventPublisher eventPublisher,
-            ShowServiceInterface showService) {
+            ApplicationEventPublisher eventPublisher) {
         this.showRepository = showRepository;
         this.seatRepository = seatRepository;
         this.reservationRepository = reservationRepository;
@@ -59,7 +57,6 @@ public class ReservationService implements ReservationServiceInterface {
         this.metrics = metrics;
         this.properties = properties;
         this.eventPublisher = eventPublisher;
-        this.showService = showService;
     }
 
     @Override
@@ -139,7 +136,6 @@ public class ReservationService implements ReservationServiceInterface {
         reservation = reservationRepository.save(reservation);
 
         metrics.recordConfirmed();
-        showService.evictShow(showId);
         eventPublisher.publishEvent(new ReservationCreatedEvent(
                 reservation.getId(), showId, userId, reservation.getSeatLabels()));
 
@@ -167,8 +163,8 @@ public class ReservationService implements ReservationServiceInterface {
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
 
-        showService.evictShow(reservation.getShowId());
-        eventPublisher.publishEvent(new ReservationCancelledEvent(reservationId, userId));
+        eventPublisher.publishEvent(new ReservationCancelledEvent(
+                reservationId, reservation.getShowId(), userId));
 
         return toResponse(reservation);
     }
@@ -190,9 +186,8 @@ public class ReservationService implements ReservationServiceInterface {
             reservation.setStatus(ReservationStatus.EXPIRED);
             reservationRepository.save(reservation);
 
-            showService.evictShow(reservation.getShowId());
             eventPublisher.publishEvent(new ReservationExpiredEvent(
-                    reservation.getId(), reservation.getUserId()));
+                    reservation.getId(), reservation.getShowId(), reservation.getUserId()));
 
             count++;
         }

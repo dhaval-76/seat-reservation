@@ -21,15 +21,15 @@ public class ReservationEventListener {
     @Async
     @EventListener
     public void onReservationCancelled(ReservationCancelledEvent event) {
-        log.info("[Event:] Reservation {} cancelled by user {}",
-                event.reservationId(), event.userId());
+        log.info("[Event:] Reservation {} cancelled by user {} on show {}",
+                event.reservationId(), event.userId(), event.showId());
     }
 
     @Async
     @EventListener
     public void onReservationExpired(ReservationExpiredEvent event) {
-        log.info("[Event:] Reservation {} expired for user {}",
-                event.reservationId(), event.userId());
+        log.info("[Event:] Reservation {} expired for user {} on show {}",
+                event.reservationId(), event.userId(), event.showId());
     }
 
     @Async
