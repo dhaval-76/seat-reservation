@@ -13,7 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
-public class ShowService {
+public class ShowService implements ShowServiceInterface {
 
     private final ShowRepository showRepository;
 

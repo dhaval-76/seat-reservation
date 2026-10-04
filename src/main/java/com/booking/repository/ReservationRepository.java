@@ -14,7 +14,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
 
     Optional<Reservation> findByIdempotencyKey(String idempotencyKey);
 
-    @Query(value = "SELECT COUNT(*) FROM seats WHERE show_id = :showId AND held_by = :userId AND status IN ('HELD', 'CONFIRMED')", nativeQuery = true)
+    @Query("SELECT COUNT(s) FROM Seat s WHERE s.show.id = :showId AND s.heldBy = :userId AND s.status IN (com.booking.entity.SeatStatus.HELD, com.booking.entity.SeatStatus.CONFIRMED)")
     long countActiveSeatsByShowIdAndUserId(@Param("showId") Long showId, @Param("userId") String userId);
 
     @Query("SELECT r FROM Reservation r WHERE r.status = 'HELD' AND r.expiresAt < :now")

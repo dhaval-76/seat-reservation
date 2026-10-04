@@ -2,7 +2,7 @@ package com.booking.controller;
 
 import com.booking.dto.CreateShowRequest;
 import com.booking.dto.ShowResponse;
-import com.booking.service.ShowService;
+import com.booking.service.ShowServiceInterface;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/shows")
 public class ShowController {
 
-    private final ShowService showService;
+    private final ShowServiceInterface showService;
 
-    public ShowController(ShowService showService) {
+    public ShowController(ShowServiceInterface showService) {
         this.showService = showService;
     }
 

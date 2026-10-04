@@ -1,8 +1,10 @@
 package com.booking.service;
 
+import com.booking.config.BookingProperties;
 import com.booking.dto.ReservationResponse;
 import com.booking.dto.ReserveRequest;
 import com.booking.entity.*;
+import com.booking.event.*;
 import com.booking.exception.*;
 import com.booking.metrics.BookingMetrics;
 import com.booking.repository.ReservationRepository;
@@ -12,7 +14,7 @@ import com.booking.service.strategy.ReservationResult;
 import com.booking.service.strategy.ReservationStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Service
-public class ReservationService {
+public class ReservationService implements ReservationServiceInterface {
 
     private static final Logger log = LoggerFactory.getLogger(ReservationService.class);
 
@@ -32,8 +34,8 @@ public class ReservationService {
     private final ReservationRepository reservationRepository;
     private final ReservationStrategy strategy;
     private final BookingMetrics metrics;
-    private final long holdDurationSeconds;
-    private final long maxSeatsPerUser;
+    private final BookingProperties properties;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReservationService(
             ShowRepository showRepository,
@@ -41,19 +43,24 @@ public class ReservationService {
             ReservationRepository reservationRepository,
             ReservationStrategy strategy,
             BookingMetrics metrics,
-            @Value("${booking.hold-duration-seconds:300}") long holdDurationSeconds,
-            @Value("${booking.max-seats-per-user-per-show:10}") long maxSeatsPerUser) {
+            BookingProperties properties,
+            ApplicationEventPublisher eventPublisher) {
         this.showRepository = showRepository;
         this.seatRepository = seatRepository;
         this.reservationRepository = reservationRepository;
         this.strategy = strategy;
         this.metrics = metrics;
-        this.holdDurationSeconds = holdDurationSeconds;
-        this.maxSeatsPerUser = maxSeatsPerUser;
+        this.properties = properties;
+        this.eventPublisher = eventPublisher;
     }
 
+    @Override
     @Transactional
     public ReservationResponse reserve(Long showId, String userId, ReserveRequest request) {
+        return metrics.getReservationDurationTimer().record(() -> doReserve(showId, userId, request));
+    }
+
+    private ReservationResponse doReserve(Long showId, String userId, ReserveRequest request) {
         // Verify show exists
         showRepository.findById(showId)
                 .orElseThrow(() -> new ShowNotFoundException(showId));
@@ -88,9 +95,10 @@ public class ReservationService {
 
         // Per-user limit check
         long currentCount = reservationRepository.countActiveSeatsByShowIdAndUserId(showId, userId);
-        if (currentCount + sortedLabels.size() > maxSeatsPerUser) {
+        if (currentCount + sortedLabels.size() > properties.maxSeatsPerUserPerShow()) {
             metrics.recordDeclined("user_limit");
-            throw new UserLimitExceededException(userId, currentCount, maxSeatsPerUser);
+            eventPublisher.publishEvent(new ReservationDeclinedEvent("user_limit", showId, userId));
+            throw new UserLimitExceededException(userId, currentCount, properties.maxSeatsPerUserPerShow());
         }
 
         // Apply strategy (all-or-nothing or best-effort)
@@ -99,6 +107,7 @@ public class ReservationService {
             result = strategy.tryReserve(lockedSeats, sortedLabels, userId);
         } catch (SeatUnavailableException e) {
             metrics.recordDeclined("seat_unavailable");
+            eventPublisher.publishEvent(new ReservationDeclinedEvent("seat_unavailable", showId, userId));
             throw e;
         }
 
@@ -113,16 +122,17 @@ public class ReservationService {
         reservation.setStatus(ReservationStatus.HELD);
         reservation.setSeatLabels(result.reservedSeats().stream()
                 .map(Seat::getLabel).sorted().reduce((a, b) -> a + "," + b).orElse(""));
-        reservation.setExpiresAt(Instant.now().plus(holdDurationSeconds, ChronoUnit.SECONDS));
+        reservation.setExpiresAt(Instant.now().plus(properties.holdDurationSeconds(), ChronoUnit.SECONDS));
         reservation = reservationRepository.save(reservation);
 
         metrics.recordConfirmed();
-        log.info("Reservation {} created for user {} on show {} seats {}",
-                reservation.getId(), userId, showId, reservation.getSeatLabels());
+        eventPublisher.publishEvent(new ReservationCreatedEvent(
+                reservation.getId(), showId, userId, reservation.getSeatLabels()));
 
         return toResponse(reservation);
     }
 
+    @Override
     @Transactional
     public ReservationResponse cancel(Long reservationId, String userId) {
         Reservation reservation = reservationRepository.findByIdAndUserId(reservationId, userId)
@@ -144,10 +154,12 @@ public class ReservationService {
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
 
-        log.info("Reservation {} cancelled by user {}", reservationId, userId);
+        eventPublisher.publishEvent(new ReservationCancelledEvent(reservationId, userId));
+
         return toResponse(reservation);
     }
 
+    @Override
     @Transactional
     public int expireHolds() {
         List<Reservation> expired = reservationRepository.findExpiredHolds(Instant.now());
@@ -162,6 +174,10 @@ public class ReservationService {
 
             reservation.setStatus(ReservationStatus.EXPIRED);
             reservationRepository.save(reservation);
+
+            eventPublisher.publishEvent(new ReservationExpiredEvent(
+                    reservation.getId(), reservation.getUserId()));
+
             count++;
         }
         return count;

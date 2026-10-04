@@ -39,6 +39,13 @@ management:
       show-details: always
       probes:
         enabled: true
+  metrics:
+    enable:
+      all: false
+      jvm: true
+      booking: true
+      process: true
+      system: true
 
 booking:
   reservation-strategy: all-or-nothing

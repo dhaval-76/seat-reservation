@@ -4,8 +4,11 @@ import com.booking.entity.Seat;
 import com.booking.entity.SeatStatus;
 import com.booking.exception.SeatUnavailableException;
 
+import org.springframework.stereotype.Component;
+
 import java.util.List;
 
+@Component("allOrNothingStrategy")
 public class AllOrNothingStrategy implements ReservationStrategy {
 
     @Override

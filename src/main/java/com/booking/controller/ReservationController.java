@@ -2,7 +2,7 @@ package com.booking.controller;
 
 import com.booking.dto.ReservationResponse;
 import com.booking.dto.ReserveRequest;
-import com.booking.service.ReservationService;
+import com.booking.service.ReservationServiceInterface;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,9 +12,9 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class ReservationController {
 
-    private final ReservationService reservationService;
+    private final ReservationServiceInterface reservationService;
 
-    public ReservationController(ReservationService reservationService) {
+    public ReservationController(ReservationServiceInterface reservationService) {
         this.reservationService = reservationService;
     }
 
