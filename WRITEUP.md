@@ -1,5 +1,7 @@
 # Write-Up: Seat Reservation at Scale
 
+**Live:** https://seatreservation-4juz.onrender.com
+
 ## Atomic Decision
 
 The "who gets the seat" decision is pushed into a single atomic step using **PostgreSQL `SELECT ... FOR UPDATE` with deterministic ordering**.
