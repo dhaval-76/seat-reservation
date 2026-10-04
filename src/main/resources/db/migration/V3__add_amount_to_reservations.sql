@@ -1,0 +1,1 @@
+ALTER TABLE reservations ADD COLUMN amount_paise BIGINT NOT NULL DEFAULT 0;

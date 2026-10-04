@@ -122,6 +122,7 @@ public class ReservationService implements ReservationServiceInterface {
         reservation.setStatus(ReservationStatus.HELD);
         reservation.setSeatLabels(result.reservedSeats().stream()
                 .map(Seat::getLabel).sorted().reduce((a, b) -> a + "," + b).orElse(""));
+        reservation.setAmountPaise(request.amountPaise());
         reservation.setExpiresAt(Instant.now().plus(properties.holdDurationSeconds(), ChronoUnit.SECONDS));
         reservation = reservationRepository.save(reservation);
 
@@ -190,6 +191,7 @@ public class ReservationService implements ReservationServiceInterface {
                 r.getUserId(),
                 r.getStatus().name(),
                 Arrays.asList(r.getSeatLabels().split(",")),
+                r.getAmountPaise(),
                 r.getCreatedAt(),
                 r.getExpiresAt()
         );

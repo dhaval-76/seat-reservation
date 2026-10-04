@@ -9,6 +9,7 @@ public record ReservationResponse(
     String userId,
     String status,
     List<String> seats,
+    long amountPaise,
     Instant createdAt,
     Instant expiresAt
 ) {}

@@ -83,7 +83,22 @@ Response `201`:
 curl -s http://localhost:8080/shows/1
 ```
 
-Response `200`: same shape as Create Show with current seat statuses.
+Response `200`:
+
+```json
+{
+  "id": 1,
+  "name": "Hamilton",
+  "seats": [
+    { "label": "A1", "status": "HELD" },
+    { "label": "A2", "status": "HELD" },
+    { "label": "A3", "status": "AVAILABLE" },
+    { "label": "B1", "status": "AVAILABLE" },
+    { "label": "B2", "status": "AVAILABLE" }
+  ],
+  "summary": { "total": 5, "available": 3, "held": 2, "confirmed": 0 }
+}
+```
 
 #### Reserve Seats
 
@@ -91,7 +106,7 @@ Response `200`: same shape as Create Show with current seat statuses.
 curl -s -X POST http://localhost:8080/shows/1/reserve \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer user-alice" \
-  -d '{"seats": ["A1", "A2"], "idempotencyKey": "uuid-123"}'
+  -d '{"seats": ["A1", "A2"], "idempotencyKey": "uuid-123", "amountPaise": 150000}'
 ```
 
 Response `201`:
@@ -103,6 +118,7 @@ Response `201`:
   "userId": "user-alice",
   "status": "HELD",
   "seats": ["A1", "A2"],
+  "amountPaise": 150000,
   "createdAt": "2026-10-04T07:00:00Z",
   "expiresAt": "2026-10-04T07:05:00Z"
 }
@@ -131,6 +147,7 @@ Response `200`:
   "userId": "user-alice",
   "status": "CANCELLED",
   "seats": ["A1", "A2"],
+  "amountPaise": 150000,
   "createdAt": "2026-10-04T07:00:00Z",
   "expiresAt": "2026-10-04T07:05:00Z"
 }

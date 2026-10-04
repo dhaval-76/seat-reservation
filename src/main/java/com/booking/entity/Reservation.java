@@ -27,6 +27,9 @@ public class Reservation {
     @Column(name = "seat_labels", nullable = false)
     private String seatLabels;
 
+    @Column(name = "amount_paise", nullable = false)
+    private long amountPaise;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -41,6 +44,7 @@ public class Reservation {
     public String getIdempotencyKey() { return idempotencyKey; }
     public ReservationStatus getStatus() { return status; }
     public String getSeatLabels() { return seatLabels; }
+    public long getAmountPaise() { return amountPaise; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getExpiresAt() { return expiresAt; }
 
@@ -50,6 +54,7 @@ public class Reservation {
     public void setIdempotencyKey(String idempotencyKey) { this.idempotencyKey = idempotencyKey; }
     public void setStatus(ReservationStatus status) { this.status = status; }
     public void setSeatLabels(String seatLabels) { this.seatLabels = seatLabels; }
+    public void setAmountPaise(long amountPaise) { this.amountPaise = amountPaise; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
 }
