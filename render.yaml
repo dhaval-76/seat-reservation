@@ -19,7 +19,7 @@ services:
       - key: DB_NAME
         fromDatabase:
           name: booking-db
-          property: name
+          property: database
       - key: DATABASE_USERNAME
         fromDatabase:
           name: booking-db
