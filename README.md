@@ -2,6 +2,8 @@
 
 Concurrent seat reservation API with PostgreSQL row-level locking, advisory locks for per-user serialization, idempotent reservations, and distributed scheduling.
 
+**Live:** https://seatreservation-4juz.onrender.com (free tier — first request may take ~30s if the instance is cold)
+
 ## Tech Stack
 
 | Component | Version |
