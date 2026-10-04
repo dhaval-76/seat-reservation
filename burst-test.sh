@@ -28,7 +28,7 @@ done
 info "Creating show with 10 seats..."
 SHOW=$(curl -sf -X POST "$BASE_URL/shows" \
     -H "Content-Type: application/json" \
-    -d '{"name":"Burst Test Show","seats":["A1","A2","A3","A4","A5","A6","A7","A8","A9","A10"]}')
+    -d '{"name":"Burst Test Show","seats":["A1","A2","A3","A4","A5","A6","A7","A8","A9","A10"],"price_paise":25000}')
 SHOW_ID=$(echo "$SHOW" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 info "Show created: ID=$SHOW_ID"
 
@@ -43,7 +43,7 @@ for i in $(seq 1 "$CONCURRENCY"); do
             -X POST "$BASE_URL/shows/$SHOW_ID/reserve" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer user-storm-$i" \
-            -d "{\"seats\":[\"A1\"],\"idempotencyKey\":\"storm-$i\"}")
+            -d "{\"seats\":[\"A1\"],\"idempotency_key\":\"storm-$i\"}")
         echo "$HTTP_CODE" > "$TMPDIR/code_$i"
     ) &
 done
@@ -74,12 +74,12 @@ RESP1=$(curl -sf -o /dev/null -w "%{http_code}" \
     -X POST "$BASE_URL/shows/$SHOW_ID/reserve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer user-idem-1" \
-    -d '{"seats":["A2"],"idempotencyKey":"idem-test-1"}')
+    -d '{"seats":["A2"],"idempotency_key":"idem-test-1"}')
 RESP2=$(curl -sf -o /dev/null -w "%{http_code}" \
     -X POST "$BASE_URL/shows/$SHOW_ID/reserve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer user-idem-1" \
-    -d '{"seats":["A2"],"idempotencyKey":"idem-test-1"}')
+    -d '{"seats":["A2"],"idempotency_key":"idem-test-1"}')
 [ "$RESP1" = "201" ] && [ "$RESP2" = "201" ] && pass "Idempotent retry returns 201" || fail "Idempotency failed: $RESP1, $RESP2"
 
 # Same key, different seats → 409
@@ -87,21 +87,26 @@ RESP3=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST "$BASE_URL/shows/$SHOW_ID/reserve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer user-idem-1" \
-    -d '{"seats":["A3"],"idempotencyKey":"idem-test-1"}')
+    -d '{"seats":["A3"],"idempotency_key":"idem-test-1"}')
 [ "$RESP3" = "409" ] && pass "Same key + different seats = 409" || fail "Expected 409, got $RESP3"
 
 # -------------------------------------------------------------------
-# 4. Per-user limit test (default max 10)
+# 4. Per-user limit test (default max 4)
 # -------------------------------------------------------------------
 info "Testing per-user seat limit..."
-# user-limit-1 already has 0 seats, try to reserve 10 (A3-A10 available + need 2 more from separate show)
-# Simpler: reserve remaining available seats one by one
 LIMIT_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
     -X POST "$BASE_URL/shows/$SHOW_ID/reserve" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer user-limit-1" \
-    -d '{"seats":["A3","A4","A5","A6","A7","A8","A9","A10"],"idempotencyKey":"limit-1"}')
-[ "$LIMIT_CODE" = "201" ] && pass "Reserved 8 seats for limit user" || fail "Expected 201, got $LIMIT_CODE"
+    -d '{"seats":["A3","A4","A5","A6"],"idempotency_key":"limit-1"}')
+[ "$LIMIT_CODE" = "201" ] && pass "Reserved 4 seats (at limit)" || fail "Expected 201, got $LIMIT_CODE"
+
+LIMIT_OVER=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST "$BASE_URL/shows/$SHOW_ID/reserve" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer user-limit-1" \
+    -d '{"seats":["A7"],"idempotency_key":"limit-2"}')
+[ "$LIMIT_OVER" = "409" ] && pass "5th seat exceeds limit → 409" || fail "Expected 409, got $LIMIT_OVER"
 
 # -------------------------------------------------------------------
 # 5. Reconciliation check

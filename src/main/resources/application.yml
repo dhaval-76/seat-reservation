@@ -6,7 +6,7 @@ spring:
     username: ${DATABASE_USERNAME:booking}
     password: ${DATABASE_PASSWORD:booking}
     hikari:
-      maximum-pool-size: 20
+      maximum-pool-size: 30
       minimum-idle: 2
       connection-timeout: 5000
   jpa:
@@ -29,7 +29,7 @@ spring:
 
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{requestId:-}] %-5level %logger{36} - %msg%n"
+    console: '{"timestamp":"%d{yyyy-MM-dd''T''HH:mm:ss.SSSZ}","level":"%level","logger":"%logger{36}","thread":"%thread","request_id":"%X{requestId:-}","message":"%msg"}%n'
 
 server:
   port: ${PORT:8080}
@@ -45,6 +45,10 @@ management:
       show-details: always
       probes:
         enabled: true
+      group:
+        readiness:
+          include: db
+          show-details: always
   metrics:
     enable:
       all: false
@@ -57,4 +61,4 @@ booking:
   reservation-strategy: all-or-nothing
   hold-duration-seconds: 300
   hold-cleanup-interval-ms: 30000
-  max-seats-per-user-per-show: 10
+  max-seats-per-user-per-show: 4

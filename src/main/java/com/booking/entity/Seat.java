@@ -54,6 +54,12 @@ public class Seat {
         this.heldAt = Instant.now();
     }
 
+    public void reserve(String userId) {
+        this.status = SeatStatus.CONFIRMED;
+        this.heldBy = userId;
+        this.heldAt = Instant.now();
+    }
+
     public void release() {
         this.status = SeatStatus.AVAILABLE;
         this.heldBy = null;

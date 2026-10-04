@@ -32,12 +32,12 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows \
 # ---- 3. AUTH ----
 echo ""; echo "--- 3. Authentication ---"
 SHOW=$(curl -sf -X POST $BASE/shows -H "Content-Type: application/json" \
-  -d '{"name":"Auth Test","seats":["B1","B2","B3"]}')
+  -d '{"name":"Auth Test","seats":["B1","B2","B3"],"price_paise":25000}')
 SID=$(echo "$SHOW" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" \
-  -d '{"seats":["B1"],"idempotencyKey":"no-auth"}')
+  -d '{"seats":["B1"],"idempotency_key":"no-auth"}')
 [ "$CODE" = "401" ] && pass "Reserve without auth → 401" || fail "Expected 401, got $CODE"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/reservations/999/cancel)
@@ -50,69 +50,69 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" $BASE/shows/9999)
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/9999/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-1" \
-  -d '{"seats":["X1"],"idempotencyKey":"nf-1"}')
+  -d '{"seats":["X1"],"idempotency_key":"nf-1"}')
 [ "$CODE" = "404" ] && pass "Reserve on non-existent show → 404" || fail "Expected 404, got $CODE"
 
 # ---- 5. SEAT NOT FOUND ----
 echo ""; echo "--- 5. Seat Not Found ---"
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-1" \
-  -d '{"seats":["Z99"],"idempotencyKey":"snf-1"}')
+  -d '{"seats":["Z99"],"idempotency_key":"snf-1"}')
 [ "$CODE" = "404" ] && pass "Non-existent seat → 404" || fail "Expected 404, got $CODE"
 
 # ---- 6. RESERVE + CONFLICT ----
 echo ""; echo "--- 6. Reservation & Double-sell Prevention ---"
 RESP=$(curl -sf -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-10" \
-  -d '{"seats":["B1"],"idempotencyKey":"res-1"}')
-echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['status']=='HELD'" 2>/dev/null \
-  && pass "Reserve B1 → HELD" || fail "Reserve B1 failed"
+  -d '{"seats":["B1"],"idempotency_key":"res-1"}')
+echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['status']=='confirmed'" 2>/dev/null \
+  && pass "Reserve B1 → confirmed" || fail "Reserve B1 failed"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-20" \
-  -d '{"seats":["B1"],"idempotencyKey":"res-2"}')
+  -d '{"seats":["B1"],"idempotency_key":"res-2"}')
 [ "$CODE" = "409" ] && pass "Double-sell attempt → 409" || fail "Expected 409, got $CODE"
 
 # ---- 7. IDEMPOTENCY ----
 echo ""; echo "--- 7. Idempotency ---"
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-10" \
-  -d '{"seats":["B1"],"idempotencyKey":"res-1"}')
+  -d '{"seats":["B1"],"idempotency_key":"res-1"}')
 [ "$CODE" = "201" ] && pass "Idempotent retry → 201" || fail "Expected 201, got $CODE"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-10" \
-  -d '{"seats":["B2"],"idempotencyKey":"res-1"}')
+  -d '{"seats":["B2"],"idempotency_key":"res-1"}')
 [ "$CODE" = "409" ] && pass "Same key + different seats → 409" || fail "Expected 409, got $CODE"
 
 # ---- 8. PER-USER LIMIT ----
-echo ""; echo "--- 8. Per-User Limit ---"
+echo ""; echo "--- 8. Per-User Limit (max 4) ---"
 BIGSHOW=$(curl -sf -X POST $BASE/shows -H "Content-Type: application/json" \
-  -d '{"name":"Limit Test","seats":["L1","L2","L3","L4","L5","L6","L7","L8","L9","L10","L11","L12"]}')
+  -d '{"name":"Limit Test","seats":["L1","L2","L3","L4","L5","L6"],"price_paise":10000}')
 BSID=$(echo "$BIGSHOW" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$BSID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-limit" \
-  -d '{"seats":["L1","L2","L3","L4","L5","L6","L7","L8","L9","L10"],"idempotencyKey":"limit-10"}')
-[ "$CODE" = "201" ] && pass "Reserve 10 seats (at max) → 201" || fail "Expected 201, got $CODE"
+  -d '{"seats":["L1","L2","L3","L4"],"idempotency_key":"limit-4"}')
+[ "$CODE" = "201" ] && pass "Reserve 4 seats (at max) → 201" || fail "Expected 201, got $CODE"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/shows/$BSID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-limit" \
-  -d '{"seats":["L11"],"idempotencyKey":"limit-11"}')
-[ "$CODE" = "409" ] && pass "11th seat exceeds limit → 409" || fail "Expected 409, got $CODE"
+  -d '{"seats":["L5"],"idempotency_key":"limit-5"}')
+[ "$CODE" = "409" ] && pass "5th seat exceeds limit → 409" || fail "Expected 409, got $CODE"
 
 # ---- 9. CANCELLATION ----
 echo ""; echo "--- 9. Cancellation ---"
 CANCEL_RESP=$(curl -sf -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-cancel" \
-  -d '{"seats":["B2"],"idempotencyKey":"cancel-1"}')
-RES_ID=$(echo "$CANCEL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+  -d '{"seats":["B2"],"idempotency_key":"cancel-1"}')
+RES_ID=$(echo "$CANCEL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['reservation_id'])")
 pass "Reserved B2 for cancellation test (reservation $RES_ID)"
 
 CANCELLED=$(curl -sf -X POST $BASE/reservations/$RES_ID/cancel \
   -H "Authorization: Bearer user-cancel")
 STATUS=$(echo "$CANCELLED" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
-[ "$STATUS" = "CANCELLED" ] && pass "Cancel → status CANCELLED" || fail "Expected CANCELLED, got $STATUS"
+[ "$STATUS" = "cancelled" ] && pass "Cancel → status cancelled" || fail "Expected cancelled, got $STATUS"
 
 SHOW_STATE=$(curl -sf $BASE/shows/$SID)
 B2_STATUS=$(echo "$SHOW_STATE" | python3 -c "
@@ -120,7 +120,7 @@ import sys,json
 seats = json.load(sys.stdin)['seats']
 b2 = [s for s in seats if s['label']=='B2'][0]
 print(b2['status'])")
-[ "$B2_STATUS" = "AVAILABLE" ] && pass "Cancelled seat B2 → AVAILABLE" || fail "Expected AVAILABLE, got $B2_STATUS"
+[ "$B2_STATUS" = "available" ] && pass "Cancelled seat B2 → available" || fail "Expected available, got $B2_STATUS"
 
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/reservations/$RES_ID/cancel \
   -H "Authorization: Bearer user-cancel")
@@ -138,14 +138,14 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST $BASE/reservations/99999/c
 echo ""; echo "--- 10. Hold Expiry ---"
 curl -sf -X POST $BASE/shows/$SID/reserve \
   -H "Content-Type: application/json" -H "Authorization: Bearer user-expiry" \
-  -d '{"seats":["B3"],"idempotencyKey":"expiry-1"}' > /dev/null
+  -d '{"seats":["B3"],"idempotency_key":"expiry-1"}' > /dev/null
 
 B3_BEFORE=$(curl -sf $BASE/shows/$SID | python3 -c "
 import sys,json
 seats = json.load(sys.stdin)['seats']
 b3 = [s for s in seats if s['label']=='B3'][0]
 print(b3['status'])")
-[ "$B3_BEFORE" = "HELD" ] && pass "B3 is HELD before expiry" || fail "Expected HELD, got $B3_BEFORE"
+[ "$B3_BEFORE" = "confirmed" ] && pass "B3 is confirmed before expiry" || fail "Expected confirmed, got $B3_BEFORE"
 
 echo "  Waiting 16 seconds for hold to expire..."
 sleep 16
@@ -155,7 +155,7 @@ import sys,json
 seats = json.load(sys.stdin)['seats']
 b3 = [s for s in seats if s['label']=='B3'][0]
 print(b3['status'])")
-[ "$B3_AFTER" = "AVAILABLE" ] && pass "B3 → AVAILABLE after expiry" || fail "Expected AVAILABLE, got $B3_AFTER"
+[ "$B3_AFTER" = "available" ] && pass "B3 → available after expiry" || fail "Expected available, got $B3_AFTER"
 
 # ---- 11. RECONCILIATION ----
 echo ""; echo "--- 11. Reconciliation Invariant ---"
@@ -173,7 +173,7 @@ assert total == computed, f'{computed} != {total}'
 # ---- 12. BURST TEST ----
 echo ""; echo "--- 12. Burst Concurrency (200 requests, 1 seat) ---"
 BURST_SHOW=$(curl -sf -X POST $BASE/shows -H "Content-Type: application/json" \
-  -d '{"name":"Burst","seats":["HOT"]}')
+  -d '{"name":"Burst","seats":["HOT"],"price_paise":50000}')
 BURST_ID=$(echo "$BURST_SHOW" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 TMPDIR=$(mktemp -d)
@@ -183,7 +183,7 @@ for i in $(seq 1 200); do
       -X POST "$BASE/shows/$BURST_ID/reserve" \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer user-b-$i" \
-      -d "{\"seats\":[\"HOT\"],\"idempotencyKey\":\"burst-$i\"}")
+      -d "{\"seats\":[\"HOT\"],\"idempotency_key\":\"burst-$i\"}")
     echo "$HTTP_CODE" > "$TMPDIR/code_$i"
   ) &
 done
@@ -211,6 +211,22 @@ echo "$METRICS" | grep -q "booking_reservations_confirmed_total" \
   && pass "Confirmed counter present" || fail "Confirmed counter missing"
 echo "$METRICS" | grep -q "booking_reservations_declined_total" \
   && pass "Declined counter present" || fail "Declined counter missing"
+echo "$METRICS" | grep -q "booking_seats_available" \
+  && pass "Seats available gauge present" || fail "Seats available gauge missing"
+
+# ---- 14. AMOUNT COMPUTATION ----
+echo ""; echo "--- 14. Server-side Amount Computation ---"
+AMOUNT_SHOW=$(curl -sf -X POST $BASE/shows -H "Content-Type: application/json" \
+  -d '{"name":"Price Test","seats":["P1","P2","P3"],"price_paise":15000}')
+AMOUNT_SID=$(echo "$AMOUNT_SHOW" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+PRICE=$(echo "$AMOUNT_SHOW" | python3 -c "import sys,json; print(json.load(sys.stdin)['price_paise'])")
+[ "$PRICE" = "15000" ] && pass "Show stores price_paise" || fail "Expected 15000, got $PRICE"
+
+AMOUNT_RES=$(curl -sf -X POST $BASE/shows/$AMOUNT_SID/reserve \
+  -H "Content-Type: application/json" -H "Authorization: Bearer user-price" \
+  -d '{"seats":["P1","P2"],"idempotency_key":"price-1"}')
+AMOUNT=$(echo "$AMOUNT_RES" | python3 -c "import sys,json; print(json.load(sys.stdin)['amount_paise'])")
+[ "$AMOUNT" = "30000" ] && pass "amount_paise = 2 × 15000 = 30000" || fail "Expected 30000, got $AMOUNT"
 
 # ---- SUMMARY ----
 echo ""

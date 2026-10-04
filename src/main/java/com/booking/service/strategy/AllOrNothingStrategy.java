@@ -22,7 +22,7 @@ public class AllOrNothingStrategy implements ReservationStrategy {
             throw new SeatUnavailableException(unavailable);
         }
 
-        lockedSeats.forEach(s -> s.hold(userId));
+        lockedSeats.forEach(s -> s.reserve(userId));
         return new ReservationResult(lockedSeats, List.of());
     }
 }

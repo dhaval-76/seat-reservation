@@ -25,6 +25,8 @@ public interface SeatRepository extends JpaRepository<Seat, Long> {
     long countByShowIdAndStatus(@Param("showId") Long showId, @Param("status") SeatStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT s FROM Seat s WHERE s.show.id = :showId AND s.heldBy = :userId AND s.status = com.booking.entity.SeatStatus.HELD ORDER BY s.label ASC")
-    List<Seat> findHeldByUserForUpdate(@Param("showId") Long showId, @Param("userId") String userId);
+    @Query("SELECT s FROM Seat s WHERE s.show.id = :showId AND s.heldBy = :userId AND s.status IN (com.booking.entity.SeatStatus.HELD, com.booking.entity.SeatStatus.CONFIRMED) ORDER BY s.label ASC")
+    List<Seat> findReservedByUserForUpdate(@Param("showId") Long showId, @Param("userId") String userId);
+
+    long countByStatus(SeatStatus status);
 }

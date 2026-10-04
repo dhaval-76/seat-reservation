@@ -12,6 +12,8 @@ import com.booking.repository.SeatRepository;
 import com.booking.repository.ShowRepository;
 import com.booking.service.strategy.ReservationResult;
 import com.booking.service.strategy.ReservationStrategy;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -37,6 +39,9 @@ public class ReservationService implements ReservationServiceInterface {
     private final BookingProperties properties;
     private final ApplicationEventPublisher eventPublisher;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     public ReservationService(
             ShowRepository showRepository,
             SeatRepository seatRepository,
@@ -61,39 +66,44 @@ public class ReservationService implements ReservationServiceInterface {
     }
 
     private ReservationResponse doReserve(Long showId, String userId, ReserveRequest request) {
-        // Verify show exists
-        showRepository.findById(showId)
+        Show show = showRepository.findById(showId)
                 .orElseThrow(() -> new ShowNotFoundException(showId));
 
-        // Idempotency check
+        // Idempotency check — fast path for retries
         Optional<Reservation> existing = reservationRepository.findByIdempotencyKey(request.idempotencyKey());
         if (existing.isPresent()) {
             Reservation r = existing.get();
-            // Same key, same show, same user → return existing
             if (r.getShowId().equals(showId) && r.getUserId().equals(userId)) {
                 List<String> existingLabels = Arrays.asList(r.getSeatLabels().split(","));
                 List<String> requestedLabels = request.seats().stream().sorted().toList();
                 if (existingLabels.equals(requestedLabels)) {
+                    metrics.recordDeclined("idempotent_replay");
                     return toResponse(r);
                 }
             }
             throw new IdempotencyConflictException(request.idempotencyKey());
         }
 
-        // Sort requested labels for deterministic locking
+        // Advisory lock serializes requests from the same user for the same show,
+        // preventing the per-user limit TOCTOU race
+        entityManager.createNativeQuery(
+                "SELECT pg_advisory_xact_lock(CAST(:showId AS INTEGER), hashtext(CAST(:userId AS VARCHAR)))")
+                .setParameter("showId", showId)
+                .setParameter("userId", userId)
+                .getResultList();
+
         List<String> sortedLabels = request.seats().stream().sorted().toList();
 
-        // Lock seats with SELECT FOR UPDATE (ordered by label to prevent deadlocks)
+        // Lock seats with SELECT FOR UPDATE ordered by label to prevent deadlocks
         List<Seat> lockedSeats = seatRepository.findByShowIdAndLabelsForUpdate(showId, sortedLabels);
 
-        // Verify all requested seats exist
         if (lockedSeats.size() != sortedLabels.size()) {
             List<String> foundLabels = lockedSeats.stream().map(Seat::getLabel).toList();
             List<String> missing = sortedLabels.stream().filter(l -> !foundLabels.contains(l)).toList();
             throw new SeatNotFoundException(missing);
         }
 
-        // Per-user limit check
+        // Per-user limit — safe under concurrency because advisory lock serializes same-user requests
         long currentCount = reservationRepository.countActiveSeatsByShowIdAndUserId(showId, userId);
         if (currentCount + sortedLabels.size() > properties.maxSeatsPerUserPerShow()) {
             metrics.recordDeclined("user_limit");
@@ -101,7 +111,6 @@ public class ReservationService implements ReservationServiceInterface {
             throw new UserLimitExceededException(userId, currentCount, properties.maxSeatsPerUserPerShow());
         }
 
-        // Apply strategy (all-or-nothing or best-effort)
         ReservationResult result;
         try {
             result = strategy.tryReserve(lockedSeats, sortedLabels, userId);
@@ -111,18 +120,18 @@ public class ReservationService implements ReservationServiceInterface {
             throw e;
         }
 
-        // Flush seat changes
         seatRepository.saveAll(result.reservedSeats());
 
-        // Create reservation record
+        long amountPaise = show.getPricePaise() * result.reservedSeats().size();
+
         Reservation reservation = new Reservation();
         reservation.setShowId(showId);
         reservation.setUserId(userId);
         reservation.setIdempotencyKey(request.idempotencyKey());
-        reservation.setStatus(ReservationStatus.HELD);
+        reservation.setStatus(ReservationStatus.CONFIRMED);
         reservation.setSeatLabels(result.reservedSeats().stream()
                 .map(Seat::getLabel).sorted().reduce((a, b) -> a + "," + b).orElse(""));
-        reservation.setAmountPaise(request.amountPaise());
+        reservation.setAmountPaise(amountPaise);
         reservation.setExpiresAt(Instant.now().plus(properties.holdDurationSeconds(), ChronoUnit.SECONDS));
         reservation = reservationRepository.save(reservation);
 
@@ -144,7 +153,6 @@ public class ReservationService implements ReservationServiceInterface {
             throw new ReservationNotCancellableException(reservationId, reservation.getStatus().name());
         }
 
-        // Release seats
         List<String> labels = Arrays.asList(reservation.getSeatLabels().split(","));
         List<Seat> seats = seatRepository.findByShowIdAndLabelsForUpdate(reservation.getShowId(), labels);
         seats.stream()
@@ -169,7 +177,8 @@ public class ReservationService implements ReservationServiceInterface {
             List<String> labels = Arrays.asList(reservation.getSeatLabels().split(","));
             List<Seat> seats = seatRepository.findByShowIdAndLabelsForUpdate(reservation.getShowId(), labels);
             seats.stream()
-                    .filter(s -> reservation.getUserId().equals(s.getHeldBy()) && s.getStatus() == SeatStatus.HELD)
+                    .filter(s -> reservation.getUserId().equals(s.getHeldBy()) &&
+                                 (s.getStatus() == SeatStatus.HELD || s.getStatus() == SeatStatus.CONFIRMED))
                     .forEach(Seat::release);
             seatRepository.saveAll(seats);
 
@@ -189,7 +198,7 @@ public class ReservationService implements ReservationServiceInterface {
                 r.getId(),
                 r.getShowId(),
                 r.getUserId(),
-                r.getStatus().name(),
+                r.getStatus().name().toLowerCase(),
                 Arrays.asList(r.getSeatLabels().split(",")),
                 r.getAmountPaise(),
                 r.getCreatedAt(),

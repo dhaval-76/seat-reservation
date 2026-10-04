@@ -68,8 +68,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CannotAcquireLockException.class)
     public ResponseEntity<ErrorResponse> handle(CannotAcquireLockException ex) {
-        log.warn("Lock timeout: {}", ex.getMessage());
-        return error(HttpStatus.SERVICE_UNAVAILABLE, "Server busy, please retry");
+        log.warn("Lock contention: {}", ex.getMessage());
+        return error(HttpStatus.CONFLICT, "Could not acquire lock, please retry");
+    }
+
+    @ExceptionHandler(org.springframework.transaction.CannotCreateTransactionException.class)
+    public ResponseEntity<ErrorResponse> handle(org.springframework.transaction.CannotCreateTransactionException ex) {
+        log.warn("Cannot create transaction: {}", ex.getMessage());
+        return error(HttpStatus.CONFLICT, "Server busy, please retry");
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

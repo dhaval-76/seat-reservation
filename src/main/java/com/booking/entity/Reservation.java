@@ -22,7 +22,7 @@ public class Reservation {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private ReservationStatus status = ReservationStatus.HELD;
+    private ReservationStatus status = ReservationStatus.CONFIRMED;
 
     @Column(name = "seat_labels", nullable = false)
     private String seatLabels;

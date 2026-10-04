@@ -26,7 +26,7 @@ public class BestEffortStrategy implements ReservationStrategy {
             throw new SeatUnavailableException(requestedLabels);
         }
 
-        available.forEach(s -> s.hold(userId));
+        available.forEach(s -> s.reserve(userId));
         return new ReservationResult(available, unavailable);
     }
 }
